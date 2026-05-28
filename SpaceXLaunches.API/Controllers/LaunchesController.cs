@@ -22,11 +22,12 @@ namespace SpaceXLaunches.API.Controllers
         [ProducesResponseType((int)HttpStatusCode.OK)]
         [ProducesResponseType((int)HttpStatusCode.BadRequest)]
         [ProducesResponseType((int)HttpStatusCode.NotFound)]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
             try
             {
-                Result<IEnumerable<LaunchDto>> launches = await _launchService.GetAllLaunchesAsync();
+                PaginationParams pagination = new PaginationParams(page, pageSize);
+                Result<PagedResultDto<LaunchDto>> launches = await _launchService.GetAllLaunchesAsync(pagination);
                 return ToHttpResponse(launches);
             }
             catch (HttpRequestException ex)

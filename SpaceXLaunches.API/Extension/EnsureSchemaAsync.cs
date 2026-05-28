@@ -45,7 +45,7 @@ public class EnsureSchema
         {
             await connection.OpenAsync();
 
-            string schemaPath = Path.Combine(AppContext.BaseDirectory, "schema.sql");
+            string schemaPath = Path.Combine(AppContext.BaseDirectory, "Scripts", "schema.sql");
 
             if (!File.Exists(schemaPath))
             {
