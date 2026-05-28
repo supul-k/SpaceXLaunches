@@ -13,11 +13,13 @@ BEGIN
         [Webcast]         NVARCHAR(500)   NULL,
         [Article]         NVARCHAR(500)   NULL,
         [Wikipedia]       NVARCHAR(500)   NULL
-    );
-    
-    CREATE INDEX IX_Launches_FlightNumber ON [Launches]([FlightNumber]);
-    CREATE INDEX IX_Launches_DateUtc ON [Launches]([DateUtc]);
+    )
+
+    CREATE INDEX IX_Launches_FlightNumber ON [Launches]([FlightNumber])
+    CREATE INDEX IX_Launches_DateUtc ON [Launches]([DateUtc])
 END
+
+GO
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LaunchFailures')
 BEGIN
@@ -27,11 +29,11 @@ BEGIN
         [TimeSeconds]     INT             NULL,
         [AltitudeKm]      INT             NULL,
         [Reason]          NVARCHAR(500)   NOT NULL,
-    
+
         CONSTRAINT FK_LaunchFailures_Launches
             FOREIGN KEY ([LaunchId]) REFERENCES [Launches]([Id])
             ON DELETE CASCADE
-    );
-    
-    CREATE INDEX IX_LaunchFailures_LaunchId ON [LaunchFailures]([LaunchId]);
+    )
+
+    CREATE INDEX IX_LaunchFailures_LaunchId ON [LaunchFailures]([LaunchId])
 END

@@ -1,88 +1,81 @@
 ﻿using Microsoft.Data.SqlClient;
 
-namespace SpaceXLaunches.API.Extension
+namespace SpaceXLaunches.API.Extension;
+
+public class EnsureSchema
 {
-    public class EnsureSchema
+    public static async Task EnsureSchemaAsync(string connectionString)
     {
-        public static async Task EnsureSchemaAsync(string connectionString)
+        SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder(connectionString);
+        string databaseName = builder.InitialCatalog;
+
+        builder.InitialCatalog = "master";
+
+        using (SqlConnection masterConnection = new SqlConnection(builder.ToString()))
         {
-            var builder = new SqlConnectionStringBuilder(connectionString);
-            string databaseName = builder.InitialCatalog;
+            await masterConnection.OpenAsync();
 
-            builder.InitialCatalog = "master";
+            string checkDbSql = "SELECT COUNT(*) FROM sys.databases WHERE name = @DbName";
 
-            using (var masterConnection = new SqlConnection(builder.ToString()))
+            using (SqlCommand checkCmd = new SqlCommand(checkDbSql, masterConnection))
             {
-                await masterConnection.OpenAsync();
+                checkCmd.Parameters.AddWithValue("@DbName", databaseName);
+                int dbExists = (int)(await checkCmd.ExecuteScalarAsync())!;
 
-                string checkDbQuery = $"SELECT COUNT(*) FROM sys.databases WHERE name = '{databaseName}'";
-                using (var checkCmd = new SqlCommand(checkDbQuery, masterConnection))
+                if (dbExists == 0)
                 {
-                    int dbExists = (int)await checkCmd.ExecuteScalarAsync();
+                    string createDbSql = $"CREATE DATABASE [{databaseName.Replace("]", "]]")}]";
 
-                    if (dbExists == 0)
+                    using (SqlCommand createCmd = new SqlCommand(createDbSql, masterConnection))
                     {
-                        string createDbQuery = $"CREATE DATABASE [{databaseName}]";
-                        using (var createCmd = new SqlCommand(createDbQuery, masterConnection))
-                        {
-                            await createCmd.ExecuteNonQueryAsync();
-                            Console.WriteLine($"✓ Database '{databaseName}' created successfully");
-                        }
+                        await createCmd.ExecuteNonQueryAsync();
+                        Console.WriteLine($"✓ Database '{databaseName}' created");
                     }
-                    else
-                    {
-                        Console.WriteLine($"✓ Database '{databaseName}' already exists");
-                    }
+                }
+                else
+                {
+                    Console.WriteLine($"✓ Database '{databaseName}' already exists");
+                }
+            }
+        }
+
+        builder.InitialCatalog = databaseName;
+
+        using (SqlConnection connection = new SqlConnection(builder.ToString()))
+        {
+            await connection.OpenAsync();
+
+            string schemaPath = Path.Combine(AppContext.BaseDirectory, "schema.sql");
+
+            if (!File.Exists(schemaPath))
+            {
+                throw new FileNotFoundException($"schema.sql not found at: {schemaPath}");
+            }
+
+            string fullSql = await File.ReadAllTextAsync(schemaPath);
+
+            string[] batches = System.Text.RegularExpressions.Regex
+                .Split(fullSql, @"^\s*GO\s*$", System.Text.RegularExpressions.RegexOptions.Multiline
+                                              | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            foreach (string batch in batches)
+            {
+                if (string.IsNullOrWhiteSpace(batch)) continue;
+
+                using (SqlCommand command = new SqlCommand(batch, connection))
+                {
+                    await command.ExecuteNonQueryAsync();
                 }
             }
 
-            builder.InitialCatalog = databaseName;
+            Console.WriteLine("✓ Schema applied successfully");
 
-            using (var connection = new SqlConnection(builder.ToString()))
+            string verifySql = "SELECT COUNT(*) FROM sys.tables WHERE name IN ('Launches', 'LaunchFailures')";
+
+            using (SqlCommand verifyCmd = new SqlCommand(verifySql, connection))
             {
-                await connection.OpenAsync();
-
-                string schemaPath = Path.Combine(AppContext.BaseDirectory, "schema.sql");
-                if (!File.Exists(schemaPath))
-                {
-                    throw new FileNotFoundException($"schema.sql not found at: {schemaPath}");
-                }
-
-                string sql = await File.ReadAllTextAsync(schemaPath);
-
-                var statements = sql.Split(new[] { "GO", ";\n", ";\r\n" }, StringSplitOptions.RemoveEmptyEntries);
-
-                foreach (var statement in statements)
-                {
-                    if (!string.IsNullOrWhiteSpace(statement))
-                    {
-                        try
-                        {
-                            using (var command = new SqlCommand(statement, connection))
-                            {
-                                await command.ExecuteNonQueryAsync();
-                            }
-                        }
-                        catch (SqlException ex) when (ex.Number == 2714)
-                        {
-                            Console.WriteLine($"Table already exists, continuing...");
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Warning: {ex.Message}");
-                        }
-                    }
-                }
-
-                Console.WriteLine("✓ Schema applied successfully");
-
-                string verifyTablesQuery = @"
-            SELECT COUNT(*) FROM sys.tables WHERE name IN ('Launches', 'LaunchFailures')";
-                using (var verifyCmd = new SqlCommand(verifyTablesQuery, connection))
-                {
-                    int tableCount = (int)await verifyCmd.ExecuteScalarAsync();
-                    Console.WriteLine($"✓ Found {tableCount}/2 tables");
-                }
+                int tableCount = (int)(await verifyCmd.ExecuteScalarAsync())!;
+                Console.WriteLine($"✓ Found {tableCount}/2 tables");
             }
         }
     }

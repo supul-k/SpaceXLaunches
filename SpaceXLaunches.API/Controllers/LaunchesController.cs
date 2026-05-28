@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using SpaceXLaunches.Application.DTOs;
 using SpaceXLaunches.Application.Services;
+using SpaceXLaunches.Domain.Common;
 using System.Net;
+using static SpaceXLaunches.API.Extension.ResponseExtensions;
 
 namespace SpaceXLaunches.API.Controllers
 {
@@ -24,8 +26,8 @@ namespace SpaceXLaunches.API.Controllers
         {
             try
             {
-                IEnumerable<LaunchDto> launches = await _launchService.GetAllLaunchesAsync();
-                return Ok(launches);
+                Result<IEnumerable<LaunchDto>> launches = await _launchService.GetAllLaunchesAsync();
+                return ToHttpResponse(launches);
             }
             catch (HttpRequestException ex)
             {
@@ -45,19 +47,19 @@ namespace SpaceXLaunches.API.Controllers
         {
             if (string.IsNullOrWhiteSpace(id))
             {
-                return BadRequest(new { error = "Id cannot be empty." });
+                return BadRequest(new ErrorResponse(ErrorCodes.InvalidLaunchId, "Id cannot be empty."));
             }
 
             try
             {
-                LaunchDto? launch = await _launchService.GetLaunchByIdAsync(id);
+                Result<LaunchDto> launch = await _launchService.GetLaunchByIdAsync(id);
 
                 if (launch is null)
                 {
                     return NotFound(new { error = $"No launch found with id '{id}'." });
                 }
 
-                return Ok(launch);
+                return ToHttpResponse(launch);
             }
             catch (HttpRequestException ex)
             {

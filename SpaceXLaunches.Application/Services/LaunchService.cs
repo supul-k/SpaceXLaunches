@@ -1,4 +1,5 @@
 ﻿using SpaceXLaunches.Application.DTOs;
+using SpaceXLaunches.Domain.Common;
 using SpaceXLaunches.Domain.Entities;
 using SpaceXLaunches.Domain.Interfaces;
 
@@ -15,40 +16,80 @@ namespace SpaceXLaunches.Application.Services
             _spaceXService = spaceXService;
         }
 
-        public async Task<IEnumerable<LaunchDto>> GetAllLaunchesAsync()
+        public async Task<Result<IEnumerable<LaunchDto>>> GetAllLaunchesAsync()
         {
-            bool hasData = await _launchRepository.AnyExistsAsync();
+            Result<bool> anyExists = await _launchRepository.AnyExistsAsync();
 
-            if (hasData)
+            if (anyExists.IsFailure)
             {
-                IEnumerable<Launch> cached = await _launchRepository.GetAllAsync();
-                return cached.Select(MapToDto);
+                return Result<IEnumerable<LaunchDto>>.Failure(anyExists.Error);
             }
 
-            IEnumerable<Launch> launches = await _spaceXService.GetAllLaunchesAsync();
-            await _launchRepository.SaveAllAsync(launches);
-            return launches.Select(MapToDto);
+            if (anyExists.Value)
+            {
+                Result<IEnumerable<Launch>> cached = await _launchRepository.GetAllAsync();
+
+                if (cached.IsFailure)
+                {
+                    return Result<IEnumerable<LaunchDto>>.Failure(cached.Error);
+                }
+
+                return Result<IEnumerable<LaunchDto>>.Success(cached.Value!.Select(MapToDto));
+            }
+
+            Result<IEnumerable<Launch>> fetched = await _spaceXService.GetAllLaunchesAsync();
+
+            if (fetched.IsFailure)
+            {
+                return Result<IEnumerable<LaunchDto>>.Failure(fetched.Error);
+            }
+
+            Result<bool> saved = await _launchRepository.SaveAllAsync(fetched.Value!);
+
+            if (saved.IsFailure)
+            {
+                return Result<IEnumerable<LaunchDto>>.Failure(saved.Error);
+            }
+
+            return Result<IEnumerable<LaunchDto>>.Success(fetched.Value!.Select(MapToDto));
         }
 
-        public async Task<LaunchDto?> GetLaunchByIdAsync(string id)
+        public async Task<Result<LaunchDto>> GetLaunchByIdAsync(string id)
         {
-            bool exists = await _launchRepository.ExistsAsync(id);
+            Result<bool> exists = await _launchRepository.ExistsAsync(id);
 
-            if (exists)
+            if (exists.IsFailure)
             {
-                Launch? cached = await _launchRepository.GetByIdAsync(id);
-                return cached is null ? null : MapToDto(cached);
+                return Result<LaunchDto>.Failure(exists.Error);
             }
 
-            Launch? launch = await _spaceXService.GetLaunchByIdAsync(id);
-
-            if (launch is null)
+            if (exists.Value)
             {
-                return null;
+                Result<Launch> cached = await _launchRepository.GetByIdAsync(id);
+
+                if (cached.IsFailure)
+                {
+                    return Result<LaunchDto>.Failure(cached.Error);
+                }
+
+                return Result<LaunchDto>.Success(MapToDto(cached.Value!));
             }
 
-            await _launchRepository.SaveOneAsync(launch);
-            return MapToDto(launch);
+            Result<Launch> fetched = await _spaceXService.GetLaunchByIdAsync(id);
+
+            if (fetched.IsFailure)
+            {
+                return Result<LaunchDto>.Failure(fetched.Error);
+            }
+
+            Result<bool> saved = await _launchRepository.SaveOneAsync(fetched.Value!);
+
+            if (saved.IsFailure)
+            {
+                return Result<LaunchDto>.Failure(saved.Error);
+            }
+
+            return Result<LaunchDto>.Success(MapToDto(fetched.Value!));
         }
 
         private static LaunchDto MapToDto(Launch launch)
