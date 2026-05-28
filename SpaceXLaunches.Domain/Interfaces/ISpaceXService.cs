@@ -1,10 +1,11 @@
-﻿using SpaceXLaunches.Domain.Entities;
+﻿using SpaceXLaunches.Domain.Common;
+using SpaceXLaunches.Domain.Entities;
 
 namespace SpaceXLaunches.Domain.Interfaces
 {
     public interface ISpaceXService
     {
-        Task<IEnumerable<Launch>> GetAllLaunchesAsync();
-        Task<Launch?> GetLaunchByIdAsync(string id);
+        Task<Result<IEnumerable<Launch>>> GetAllLaunchesAsync();
+        Task<Result<Launch>> GetLaunchByIdAsync(string id);
     }
 }

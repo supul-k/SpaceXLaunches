@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.SqlClient;
+using SpaceXLaunches.Domain.Common;
 using SpaceXLaunches.Domain.Entities;
 using SpaceXLaunches.Domain.Interfaces;
 
@@ -13,34 +14,53 @@ namespace SpaceXLaunches.Infrastructure.Persistence.Repositories
             _connectionFactory = connectionFactory;
         }
 
-        public async Task<bool> AnyExistsAsync()
+        public async Task<Result<bool>> AnyExistsAsync()
         {
             const string sql = "SELECT TOP 1 1 FROM Launches";
 
-            using SqlConnection connection = _connectionFactory.CreateConnection();
-            await connection.OpenAsync();
+            try
+            {
+                using SqlConnection connection = _connectionFactory.CreateConnection();
+                await connection.OpenAsync();
 
-            using SqlCommand command = new SqlCommand(sql, connection);
-            object? result = await command.ExecuteScalarAsync();
-
-            return result is not null;
+                using SqlCommand command = new SqlCommand(sql, connection);
+                object? result = await command.ExecuteScalarAsync();
+                return Result<bool>.Success(result is not null);
+            }
+            catch (SqlException ex)
+            {
+                return Result<bool>.Failure(
+                    ErrorCodes.DatabaseReadFailure,
+                    $"Failed to check if launches exist: {ex.Message}"
+                );
+            }
         }
 
-        public async Task<bool> ExistsAsync(string id)
+        public async Task<Result<bool>> ExistsAsync(string id)
         {
             const string sql = "SELECT TOP 1 1 FROM Launches WHERE Id = @Id";
 
-            using SqlConnection connection = _connectionFactory.CreateConnection();
-            await connection.OpenAsync();
+            try
+            {
+                using SqlConnection connection = _connectionFactory.CreateConnection();
+                await connection.OpenAsync();
 
-            using SqlCommand command = new SqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@Id", id);
+                using SqlCommand command = new SqlCommand(sql, connection);
+                command.Parameters.AddWithValue("@Id", id);
 
-            object? result = await command.ExecuteScalarAsync();
-            return result is not null;
+                object? result = await command.ExecuteScalarAsync();
+                return Result<bool>.Success(result is not null);
+            }
+            catch (SqlException ex)
+            {
+                return Result<bool>.Failure(
+                    ErrorCodes.DatabaseReadFailure,
+                    $"Failed to check existence of launch '{id}': {ex.Message}"
+                );
+            }
         }
 
-        public async Task<IEnumerable<Launch>> GetAllAsync()
+        public async Task<Result<IEnumerable<Launch>>> GetAllAsync()
         {
             const string sql = @"
             SELECT
@@ -53,16 +73,27 @@ namespace SpaceXLaunches.Infrastructure.Persistence.Repositories
             LEFT JOIN LaunchFailures f ON f.LaunchId = l.Id
             ORDER BY l.FlightNumber";
 
-            using SqlConnection connection = _connectionFactory.CreateConnection();
-            await connection.OpenAsync();
+            try
+            {
+                using SqlConnection connection = _connectionFactory.CreateConnection();
+                await connection.OpenAsync();
 
-            using SqlCommand command = new SqlCommand(sql, connection);
-            using SqlDataReader reader = await command.ExecuteReaderAsync();
+                using SqlCommand command = new SqlCommand(sql, connection);
+                using SqlDataReader reader = await command.ExecuteReaderAsync();
 
-            return await ReadLaunchesFromReader(reader);
+                IEnumerable<Launch> launches = await ReadLaunchesFromReader(reader);
+                return Result<IEnumerable<Launch>>.Success(launches);
+            }
+            catch (SqlException ex)
+            {
+                return Result<IEnumerable<Launch>>.Failure(
+                    ErrorCodes.DatabaseReadFailure,
+                    $"Failed to retrieve launches from database: {ex.Message}"
+                );
+            }
         }
 
-        public async Task<Launch?> GetByIdAsync(string id)
+        public async Task<Result<Launch>> GetByIdAsync(string id)
         {
             const string sql = @"
             SELECT
@@ -75,53 +106,47 @@ namespace SpaceXLaunches.Infrastructure.Persistence.Repositories
             LEFT JOIN LaunchFailures f ON f.LaunchId = l.Id
             WHERE l.Id = @Id";
 
-            using SqlConnection connection = _connectionFactory.CreateConnection();
-            await connection.OpenAsync();
-
-            using SqlCommand command = new SqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@Id", id);
-
-            using SqlDataReader reader = await command.ExecuteReaderAsync();
-
-            IEnumerable<Launch> results = await ReadLaunchesFromReader(reader);
-            return results.FirstOrDefault();
-        }
-
-        public async Task SaveOneAsync(Launch launch)
-        {
-            using SqlConnection connection = _connectionFactory.CreateConnection();
-            await connection.OpenAsync();
-
-            using SqlTransaction transaction = connection.BeginTransaction();
-
             try
             {
-                await InsertLaunchAsync(launch, connection, transaction);
+                using SqlConnection connection = _connectionFactory.CreateConnection();
+                await connection.OpenAsync();
 
-                foreach (LaunchFailure failure in launch.Failures)
+                using SqlCommand command = new SqlCommand(sql, connection);
+                command.Parameters.AddWithValue("@Id", id);
+
+                using SqlDataReader reader = await command.ExecuteReaderAsync();
+                IEnumerable<Launch> results = await ReadLaunchesFromReader(reader);
+                Launch? launch = results.FirstOrDefault();
+
+                if (launch is null)
                 {
-                    await InsertFailureAsync(failure, launch.Id, connection, transaction);
+                    return Result<Launch>.Failure(
+                        ErrorCodes.SpaceXApiNotFound,
+                        $"Launch with id '{id}' was not found in the database."
+                    );
                 }
 
-                await transaction.CommitAsync();
+                return Result<Launch>.Success(launch);
             }
-            catch
+            catch (SqlException ex)
             {
-                await transaction.RollbackAsync();
-                throw;
+                return Result<Launch>.Failure(
+                    ErrorCodes.DatabaseReadFailure,
+                    $"Failed to retrieve launch '{id}' from database: {ex.Message}"
+                );
             }
         }
 
-        public async Task SaveAllAsync(IEnumerable<Launch> launches)
+        public async Task<Result<bool>> SaveOneAsync(Launch launch)
         {
-            using SqlConnection connection = _connectionFactory.CreateConnection();
-            await connection.OpenAsync();
-
-            using SqlTransaction transaction = connection.BeginTransaction();
-
             try
             {
-                foreach (Launch launch in launches)
+                using SqlConnection connection = _connectionFactory.CreateConnection();
+                await connection.OpenAsync();
+
+                using SqlTransaction transaction = connection.BeginTransaction();
+
+                try
                 {
                     await InsertLaunchAsync(launch, connection, transaction);
 
@@ -129,14 +154,61 @@ namespace SpaceXLaunches.Infrastructure.Persistence.Repositories
                     {
                         await InsertFailureAsync(failure, launch.Id, connection, transaction);
                     }
-                }
 
-                await transaction.CommitAsync();
+                    await transaction.CommitAsync();
+                    return Result<bool>.Success(true);
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
             }
-            catch
+            catch (SqlException ex)
             {
-                await transaction.RollbackAsync();
-                throw;
+                return Result<bool>.Failure(
+                    ErrorCodes.DatabaseWriteFailure,
+                    $"Failed to save launch '{launch.Id}': {ex.Message}"
+                );
+            }
+        }
+
+        public async Task<Result<bool>> SaveAllAsync(IEnumerable<Launch> launches)
+        {
+            try
+            {
+                using SqlConnection connection = _connectionFactory.CreateConnection();
+                await connection.OpenAsync();
+
+                using SqlTransaction transaction = connection.BeginTransaction();
+
+                try
+                {
+                    foreach (Launch launch in launches)
+                    {
+                        await InsertLaunchAsync(launch, connection, transaction);
+
+                        foreach (LaunchFailure failure in launch.Failures)
+                        {
+                            await InsertFailureAsync(failure, launch.Id, connection, transaction);
+                        }
+                    }
+
+                    await transaction.CommitAsync();
+                    return Result<bool>.Success(true);
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            }
+            catch (SqlException ex)
+            {
+                return Result<bool>.Failure(
+                    ErrorCodes.DatabaseWriteFailure,
+                    $"Failed to save launches to database: {ex.Message}"
+                );
             }
         }
 
@@ -227,9 +299,6 @@ namespace SpaceXLaunches.Infrastructure.Persistence.Repositories
             command.Parameters.AddWithValue("@FlightNumber", launch.FlightNumber);
             command.Parameters.AddWithValue("@Name", launch.Name);
             command.Parameters.AddWithValue("@DateUtc", launch.DateUtc);
-
-            // For nullable fields, if the value is null we must pass DBNull.Value —
-            // passing a C# null directly to AddWithValue will throw at runtime
             command.Parameters.AddWithValue("@Success", (object?)launch.Success ?? DBNull.Value);
             command.Parameters.AddWithValue("@Details", (object?)launch.Details ?? DBNull.Value);
             command.Parameters.AddWithValue("@RocketId", (object?)launch.RocketId ?? DBNull.Value);
