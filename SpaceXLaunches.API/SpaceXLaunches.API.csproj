@@ -8,11 +8,19 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.7" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SpaceXLaunches.Application\SpaceXLaunches.Application.csproj" />
     <ProjectReference Include="..\SpaceXLaunches.Infrastructure\SpaceXLaunches.Infrastructure.csproj" />
   </ItemGroup>
+
+    <ItemGroup>
+	    <None Include="..\SpaceXLaunches.Infrastructure\Persistence\Scripts\schema.sql">
+		    <Link>schema.sql</Link>
+		    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	    </None>
+    </ItemGroup>
 
 </Project>
