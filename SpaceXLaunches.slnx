@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="SpaceXLaunches.API/SpaceXLaunches.API.csproj" />
+  <Project Path="SpaceXLaunches.Application/SpaceXLaunches.Application.csproj" />
+  <Project Path="SpaceXLaunches.Domain/SpaceXLaunches.Domain.csproj" />
+  <Project Path="SpaceXLaunches.Infrastructure/SpaceXLaunches.Infrastructure.csproj" />
+</Solution>
