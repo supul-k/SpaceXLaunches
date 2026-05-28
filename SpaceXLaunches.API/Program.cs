@@ -1,41 +1,42 @@
-var builder = WebApplication.CreateBuilder(args);
+using SpaceXLaunches.API.Extension;
+using SpaceXLaunches.Application.Services;
+using SpaceXLaunches.Domain.Interfaces;
+using SpaceXLaunches.Infrastructure.ExternalServices;
+using SpaceXLaunches.Infrastructure.Persistence;
+using SpaceXLaunches.Infrastructure.Persistence.Repositories;
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-var app = builder.Build();
+string connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
 
-// Configure the HTTP request pipeline.
+string spaceXBaseUrl = builder.Configuration["SpaceX:BaseUrl"]
+    ?? throw new InvalidOperationException("SpaceX:BaseUrl is missing from configuration.");
+
+builder.Services.AddSingleton(new DbConnectionFactory(connectionString));
+
+builder.Services.AddHttpClient<ISpaceXService, SpaceXApiService>((httpClient, serviceProvider) =>
+{
+    return new SpaceXApiService(httpClient, spaceXBaseUrl);
+});
+
+builder.Services.AddScoped<ILaunchRepository, LaunchRepository>();
+builder.Services.AddScoped<LaunchService>();
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+WebApplication app = builder.Build();
+
 if (app.Environment.IsDevelopment())
 {
+    app.UseSwagger();
+    app.UseSwaggerUI();
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
+app.MapControllers();
+await EnsureSchema.EnsureSchemaAsync(connectionString);
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
