@@ -39,12 +39,10 @@ Clean Architecture with 4 layers:
 
 Connection string for SQL Server and SpaceX Url:
 ```json
-{
   "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Database=SpaceXLaunches;User Id=sa;Password=YourPassword123!;TrustServerCertificate=True;"
+    "DefaultConnection": "Server=(LocalDB)\\MSSQLLocalDB;Database=SpaceXLaunches;TrustServerCertificate=true"
   },
   "SpaceX": {
     "BaseUrl": "https://api.spacexdata.com/v4"
   }
-}
 ```
