@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.SqlClient;
+using SpaceXLaunches.Application.DTOs;
 using SpaceXLaunches.Domain.Common;
 using SpaceXLaunches.Domain.Entities;
 using SpaceXLaunches.Domain.Interfaces;
@@ -89,6 +90,68 @@ namespace SpaceXLaunches.Infrastructure.Persistence.Repositories
                 return Result<IEnumerable<Launch>>.Failure(
                     ErrorCodes.DatabaseReadFailure,
                     $"Failed to retrieve launches from database: {ex.Message}"
+                );
+            }
+        }
+
+        public async Task<Result<IEnumerable<Launch>>> GetAllPagedAsync(PaginationParams pagination)
+        {
+            const string sql = @"
+            SELECT
+                l.Id, l.FlightNumber, l.Name, l.DateUtc, l.Success,
+                l.Details, l.RocketId, l.PatchSmall, l.PatchLarge,
+                l.Webcast, l.Article, l.Wikipedia,
+                f.Id        AS FailureId,
+                f.TimeSeconds, f.AltitudeKm, f.Reason, f.LaunchId
+            FROM Launches l
+            LEFT JOIN LaunchFailures f ON f.LaunchId = l.Id
+            WHERE l.Id IN (
+                SELECT Id FROM Launches
+                ORDER BY FlightNumber
+                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY
+            )
+            ORDER BY l.FlightNumber";
+
+            try
+            {
+                using SqlConnection connection = _connectionFactory.CreateConnection();
+                await connection.OpenAsync();
+
+                using SqlCommand command = new SqlCommand(sql, connection);
+                command.Parameters.AddWithValue("@Offset", pagination.Offset);
+                command.Parameters.AddWithValue("@PageSize", pagination.PageSize);
+
+                using SqlDataReader reader = await command.ExecuteReaderAsync();
+                IEnumerable<Launch> launches = await ReadLaunchesFromReader(reader);
+                return Result<IEnumerable<Launch>>.Success(launches);
+            }
+            catch (SqlException ex)
+            {
+                return Result<IEnumerable<Launch>>.Failure(
+                    ErrorCodes.DatabaseReadFailure,
+                    $"Failed to retrieve paged launches: {ex.Message}"
+                );
+            }
+        }
+
+        public async Task<Result<int>> GetTotalCountAsync()
+        {
+            const string sql = "SELECT COUNT(*) FROM Launches";
+
+            try
+            {
+                using SqlConnection connection = _connectionFactory.CreateConnection();
+                await connection.OpenAsync();
+
+                using SqlCommand command = new SqlCommand(sql, connection);
+                int count = (int)(await command.ExecuteScalarAsync())!;
+                return Result<int>.Success(count);
+            }
+            catch (SqlException ex)
+            {
+                return Result<int>.Failure(
+                    ErrorCodes.DatabaseReadFailure,
+                    $"Failed to get total launch count: {ex.Message}"
                 );
             }
         }
